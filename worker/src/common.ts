@@ -1,8 +1,8 @@
 import { Context } from 'hono';
 import { Jwt } from 'hono/utils/jwt'
 
-import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting } from './utils';
-import { HonoCustomType, UserRole } from './types';
+import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList } from './utils';
+import { HonoCustomType, UserRole, AnotherWorker, RPCEmailMessage, ParsedEmailContext } from './types';
 import { unbindTelegramByAddress } from './telegram_api/common';
 import { CONSTANTS } from './constants';
 import { AdminWebhookSettings, WebhookMail, WebhookSettings } from './models';
@@ -256,40 +256,51 @@ export const handleListQuery = async (
 }
 
 
-export const commonParseMail = async (raw_mail: string | undefined | null): Promise<{
+export const commonParseMail = async (parsedEmailContext: ParsedEmailContext): Promise<{
     sender: string,
     subject: string,
     text: string,
     html: string,
     headers?: Record<string, string>[]
 } | undefined> => {
-    if (!raw_mail) {
+    // check parsed email context is valid
+    if (!parsedEmailContext || !parsedEmailContext.rawEmail) {
         return undefined;
     }
+    // return parsed email if already parsed
+    if (parsedEmailContext.parsedEmail) {
+        return parsedEmailContext.parsedEmail;
+    }
+    const raw_mail = parsedEmailContext.rawEmail;
     // TODO: WASM parse email
     // try {
     //     const { parse_message_wrapper } = await import('mail-parser-wasm-worker');
 
     //     const parsedEmail = parse_message_wrapper(raw_mail);
-    //     return {
+    //     parsedEmailContext.parsedEmail = {
     //         sender: parsedEmail.sender || "",
     //         subject: parsedEmail.subject || "",
     //         text: parsedEmail.text || "",
+    //         headers: parsedEmail.headers?.map(
+    //             (header) => ({ key: header.key, value: header.value })
+    //         ) || [],
     //         html: parsedEmail.body_html || "",
     //     };
+    //     return parsedEmailContext.parsedEmail;
     // } catch (e) {
     //     console.error("Failed use mail-parser-wasm-worker to parse email", e);
     // }
     try {
         const { default: PostalMime } = await import('postal-mime');
         const parsedEmail = await PostalMime.parse(raw_mail);
-        return {
+        parsedEmailContext.parsedEmail = {
             sender: parsedEmail.from ? `${parsedEmail.from.name} <${parsedEmail.from.address}>` : "",
             subject: parsedEmail.subject || "",
             text: parsedEmail.text || "",
             html: parsedEmail.html || "",
             headers: parsedEmail.headers || [],
         };
+        return parsedEmailContext.parsedEmail;
     }
     catch (e) {
         console.error("Failed use PostalMime to parse email", e);
@@ -310,13 +321,13 @@ export const commonGetUserRole = async (
 export const getAddressPrefix = async (c: Context<HonoCustomType>): Promise<string | undefined> => {
     const user = c.get("userPayload");
     if (!user) {
-        return c.env.PREFIX;
+        return getStringValue(c.env.PREFIX);
     }
     const user_role = await commonGetUserRole(c, user.user_id);
     if (typeof user_role?.prefix === "string") {
         return user_role.prefix;
     }
-    return c.env.PREFIX;
+    return getStringValue(c.env.PREFIX);
 }
 
 export const getAllowDomains = async (c: Context<HonoCustomType>): Promise<string[]> => {
@@ -328,26 +339,26 @@ export const getAllowDomains = async (c: Context<HonoCustomType>): Promise<strin
     return user_role?.domains || getDefaultDomains(c);;
 }
 
-export async function sendWebhook(settings: WebhookSettings, formatMap: WebhookMail): Promise<{ success: boolean, message?: string }> {
+export async function sendWebhook(
+    settings: WebhookSettings, formatMap: WebhookMail
+): Promise<{ success: boolean, message?: string }> {
     // send webhook
     let body = settings.body;
     for (const key of Object.keys(formatMap)) {
-        /* eslint-disable no-useless-escape */
         body = body.replace(
             new RegExp(`\\$\\{${key}\\}`, "g"),
             JSON.stringify(
                 formatMap[key as keyof WebhookMail]
-            ).replace(/^"(.*)"$/, '\$1')
+            ).replace(/^"(.*)"$/, '$1')
         );
-        /* eslint-enable no-useless-escape */
     }
-    console.log("send webhook", settings.url, settings.method, settings.headers, body);
     const response = await fetch(settings.url, {
         method: settings.method,
         headers: JSON.parse(settings.headers),
         body: body
     });
     if (!response.ok) {
+        console.log("send webhook error", settings.url, settings.method, settings.headers, body);
         console.log("send webhook error", response.status, response.statusText);
         return { success: false, message: `send webhook error: ${response.status} ${response.statusText}` };
     }
@@ -357,7 +368,7 @@ export async function sendWebhook(settings: WebhookSettings, formatMap: WebhookM
 export async function triggerWebhook(
     c: Context<HonoCustomType>,
     address: string,
-    raw_mail: string,
+    parsedEmailContext: ParsedEmailContext,
     message_id: string | null
 ): Promise<void> {
     if (!c.env.KV || !getBooleanValue(c.env.ENABLE_WEBHOOK)) {
@@ -390,14 +401,14 @@ export async function triggerWebhook(
         `SELECT id FROM raw_mails where address = ? and message_id = ?`
     ).bind(address, message_id).first<string>("id");
 
-    const parsedEmail = await commonParseMail(raw_mail);
+    const parsedEmail = await commonParseMail(parsedEmailContext);
     const webhookMail = {
         id: mailId || "",
         url: c.env.FRONTEND_URL ? `${c.env.FRONTEND_URL}?mail_id=${mailId}` : "",
         from: parsedEmail?.sender || "",
         to: address,
         subject: parsedEmail?.subject || "",
-        raw: raw_mail,
+        raw: parsedEmailContext.rawEmail || "",
         parsedText: parsedEmail?.text || "",
         parsedHtml: parsedEmail?.html || ""
     }
@@ -405,6 +416,57 @@ export async function triggerWebhook(
         const res = await sendWebhook(settings, webhookMail);
         if (!res.success) {
             console.error(res.message);
+        }
+    }
+}
+
+export async function triggerAnotherWorker(
+    c: Context<HonoCustomType>,
+    rpcEmailMessage: RPCEmailMessage,
+    parsedText: string | undefined | null
+): Promise<void> {
+    if (!parsedText) {
+        return;
+    }
+
+    const anotherWorkerList: AnotherWorker[] = getAnotherWorkerList(c);
+    if (!getBooleanValue(c.env.ENABLE_ANOTHER_WORKER) || anotherWorkerList.length === 0) {
+        return;
+    }
+
+    const parsedTextLowercase: string = parsedText.toLowerCase();
+    for (const worker of anotherWorkerList) {
+
+        const keywords = worker?.keywords ?? [];
+        const bindingName = worker?.binding ?? "";
+        const methodName = worker.method ?? "rpcEmail";
+
+        const serviceBinding = (c.env as any)[bindingName] ?? {};
+        const method = serviceBinding[methodName];
+
+        if (!method || typeof method !== "function") {
+            console.log(`method = ${methodName} not found or not function`);
+            continue;
+        }
+
+        if (!keywords.some(keyword => keyword && parsedTextLowercase.includes(keyword.toLowerCase()))) {
+            console.log(`worker.binding = ${bindingName} not match keywords, parsedText = ${parsedText}`);
+            continue;
+        }
+        try {
+            const bodyObj = { ...rpcEmailMessage } as any;
+            if (bodyObj.headers && typeof bodyObj.headers.forEach === "function") {
+                const headerObj: any = {}
+                bodyObj.headers.forEach((value: string, key: string) => {
+                    headerObj[key] = value;
+                });
+                bodyObj.headers = headerObj
+            }
+            const requestBody = JSON.stringify(bodyObj);
+            console.log(`exec worker , binding = ${bindingName} , requestBody = ${requestBody}`);
+            await method(requestBody);
+        } catch (e1) {
+            console.error(`execute method = ${methodName} error`, e1);
         }
     }
 }

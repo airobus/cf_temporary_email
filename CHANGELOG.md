@@ -1,13 +1,75 @@
 <!-- markdownlint-disable-file MD004 MD024 MD034 MD036 -->
 # CHANGE LOG
 
-## main(v0.8.0)
+## main(v0.9.0)
+
+- feat: | Worker | 支持多语言
+- feat: | Worker | `NO_LIMIT_SEND_ROLE` 配置支持多角色, 逗号分割
+- feat: | Actions | build 里增加 `worker-with-wasm-mail-parser.zip` 支持 UI 部署带 `wasm` 的 worker
+
+## v0.8.7
+
+- fix: |UI| 修复移动设备日期显示问题
+- feat: |Worker| 支持通过 `SMTP` 发送邮件, 使用 [zou-yu/worker-mailer](https://github.com/zou-yu/worker-mailer/blob/main/README_zh-CN.md)
+
+## v0.8.6
+
+- feat: |UI| 公告支持 html 格式
+- feat: |UI| `COPYRIGHT` 支持 html 格式
+- feat: |Doc| 优化部署文档，补充了 `Github Actions 部署文档`，增加了 `Worker 变量说明`
+
+## v0.8.5
+
+- feat: |mail-parser-wasm-worker| 修复 `initSync` 函数调用时的 `deprecated` 参数警告
+- feat: rpc headers covert & typo (#559)
+- fix: telegram mail page use iframe show email (#561)
+- feat: |Worker| 增加 `REMOVE_ALL_ATTACHMENT` 和 `REMOVE_EXCEED_SIZE_ATTACHMENT` 用于移除邮件附件，由于是解析邮件的一些信息会丢失，比如图片等.
+
+## v0.8.4
+
+- fix: |UI| 修复 admin portal 无收件人邮箱删除调用api 错误
+- feat: |Telegram Bot| 增加 telegram bot 清理无效地址凭证命令
+- feat: 增加 worker 配置 `DISABLE_ANONYMOUS_USER_CREATE_EMAIL` 禁用匿名用户创建邮箱地址，只允许登录用户创建邮箱地址
+- feat: 增加 worker 配置 `ENABLE_ANOTHER_WORKER` 及 `ANOTHER_WORKER_LIST` ，用于调用其他 worker 的 rpc 接口 (#547)
+- feat: |UI| 自动刷新配置保存到浏览器，可配置刷新间隔
+- feat: 垃圾邮件检测增加存在时才检查的列表 `JUNK_MAIL_CHECK_LIST` 配置
+- feat: | Worker | 增加 `ParsedEmailContext` 类用于缓存解析后的邮件内容，减少解析次数
+- feat: |Github Action| Worker 部署增加 `DEBUG_MODE` 输出日志, `BACKEND_USE_MAIL_WASM_PARSER` 配置是否使用 wasm 解析邮件
+
+## v0.8.3
+
+- feat: |Github Action| 增加自动更新并部署功能
+- feat: |UI| admin 用户设置，支持 oauth2 配置的删除
+- feat: 增加垃圾邮件检测必须通过的列表 `JUNK_MAIL_FORCE_PASS_LIST` 配置
+
+## v0.8.2
+
+- fix: |Doc| 修复文档中的一些错误
+- fix: |Github Action| 修复 frontend 部署分支错误的问题
+- feat: admin 发送邮件功能
+- feat: admin 后台，账号配置页面添加无限发送邮件的地址列表
+
+## v0.8.1
+
+- feat: |Doc| 更新 UI 安装的文档
+- feat: |UI| 对用户隐藏邮箱账号的 ID
+- feat: |UI| 增加邮件详情页的 `转发` 按钮
+
+## v0.8.0
 
 - feat: |UI| 随机生成地址时不超过最大长度
 - feat: |UI| 邮件时间显示浏览器时区，可在设置中切换显示为 UTC 时间
 - feat: 支持转移邮件到其他用户
 
 ## v0.7.6
+
+### Breaking Changes
+
+UI 部署 worker 需要点击 Settings -> Runtime, 修改 Compatibility flags, 增加 `nodejs_compat`
+
+![worker-runtime](vitepress-docs/docs/public/ui_install/worker-runtime.png)
+
+### Changes
 
 - feat: 支持提前设置 bot info, 降低 telegram 回调延迟 (#441)
 - feat: 增加 telegram mini app 的 build 压缩包

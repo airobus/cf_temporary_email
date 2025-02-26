@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { Jwt } from 'hono/utils/jwt'
 
+import i18n from '../i18n'
 import { HonoCustomType } from '../types'
 import { sendAdminInternalMail, getJsonSetting, saveSetting, getUserRoles } from '../utils'
 import { newAddress, handleListQuery } from '../common'
@@ -11,6 +12,7 @@ import webhook_settings from './webhook_settings'
 import mail_webhook_settings from './mail_webhook_settings'
 import oauth2_settings from './oauth2_settings'
 import worker_config from './worker_config'
+import { sendMailbyAdmin } from './send_mail'
 
 export const api = new Hono<HonoCustomType>()
 
@@ -39,6 +41,8 @@ api.get('/admin/address', async (c) => {
 
 api.post('/admin/new_address', async (c) => {
     const { name, domain, enablePrefix } = await c.req.json();
+    const lang = c.get("lang") || c.env.DEFAULT_LANG;
+    const msgs = i18n.getMessages(lang);
     if (!name) {
         return c.text("Please provide a name", 400)
     }
@@ -52,7 +56,7 @@ api.post('/admin/new_address', async (c) => {
         });
         return c.json(res);
     } catch (e) {
-        return c.text(`Failed create address: ${(e as Error).message}`, 400)
+        return c.text(`${msgs.FailedCreateAddressMsg}: ${(e as Error).message}`, 400)
     }
 })
 
@@ -256,11 +260,13 @@ api.get('/admin/account_settings', async (c) => {
         const sendBlockList = await getJsonSetting(c, CONSTANTS.SEND_BLOCK_LIST_KEY);
         const verifiedAddressList = await getJsonSetting(c, CONSTANTS.VERIFIED_ADDRESS_LIST_KEY);
         const fromBlockList = c.env.KV ? await c.env.KV.get<string[]>(CONSTANTS.EMAIL_KV_BLACK_LIST, 'json') : [];
+        const noLimitSendAddressList = await getJsonSetting(c, CONSTANTS.NO_LIMIT_SEND_ADDRESS_LIST_KEY);
         return c.json({
             blockList: blockList || [],
             sendBlockList: sendBlockList || [],
             verifiedAddressList: verifiedAddressList || [],
-            fromBlockList: fromBlockList || []
+            fromBlockList: fromBlockList || [],
+            noLimitSendAddressList: noLimitSendAddressList || []
         })
     } catch (error) {
         console.error(error);
@@ -270,7 +276,10 @@ api.get('/admin/account_settings', async (c) => {
 
 api.post('/admin/account_settings', async (c) => {
     /** @type {{ blockList: Array<string>, sendBlockList: Array<string> }} */
-    const { blockList, sendBlockList, verifiedAddressList, fromBlockList } = await c.req.json();
+    const {
+        blockList, sendBlockList, noLimitSendAddressList,
+        verifiedAddressList, fromBlockList
+    } = await c.req.json();
     if (!blockList || !sendBlockList || !verifiedAddressList) {
         return c.text("Invalid blockList or sendBlockList", 400)
     }
@@ -295,6 +304,10 @@ api.post('/admin/account_settings', async (c) => {
     if (fromBlockList) {
         await c.env.KV.put(CONSTANTS.EMAIL_KV_BLACK_LIST, JSON.stringify(fromBlockList || []))
     }
+    await saveSetting(
+        c, CONSTANTS.NO_LIMIT_SEND_ADDRESS_LIST_KEY,
+        JSON.stringify(noLimitSendAddressList || [])
+    )
     return c.json({
         success: true
     })
@@ -330,3 +343,6 @@ api.post("/admin/mail_webhook/test", mail_webhook_settings.testWebhookSettings);
 
 // worker config
 api.get("/admin/worker/configs", worker_config.getConfig);
+
+// send mail by admin
+api.post("/admin/send_mail", sendMailbyAdmin);

@@ -24,6 +24,7 @@ export default defineConfig({
         {
           'naive-ui': [
             'useMessage',
+            'useNotification',
             'NButton',
             'NPopconfirm',
             'NIcon',
@@ -37,7 +38,7 @@ export default defineConfig({
     VitePWA({
       registerType: null,
       devOptions: {
-        enabled: true
+        enabled: false
       },
       workbox: {
         disableDevLogs: true,
@@ -68,5 +69,10 @@ export default defineConfig({
   },
   define: {
     'import.meta.env.PACKAGE_VERSION': JSON.stringify(process.env.npm_package_version),
+  },
+  esbuild: {
+    supported: {
+      'top-level-await': true
+    },
   }
 })
