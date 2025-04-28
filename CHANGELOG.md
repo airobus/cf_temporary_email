@@ -1,7 +1,13 @@
 <!-- markdownlint-disable-file MD004 MD024 MD034 MD036 -->
 # CHANGE LOG
 
-## main(v0.9.1)
+## v0.10.0
+
+- feat: 支持 User 查看收件箱，`/user_api/mails` 接口, 支持 `address` 和 `keyword` 过滤
+- fix: 修复 Oauth2 登录获取 Token 时，一些 Oauth2 需要 `redirect_uri` 参数的问题
+- feat: 用户访问网页时，如果 `user token` 在 7 天内过期，自动刷新
+
+## v0.9.1
 
 - feat: |UI| support google ads
 - feat: |UI| 使用 shadow DOM 防止样式污染
